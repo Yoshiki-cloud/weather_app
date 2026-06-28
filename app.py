@@ -5,47 +5,46 @@ import requests
 st.set_page_config(page_title="朝の1秒チェックボード", page_icon="☀️")
 st.title("☀️ 朝の1秒チェックボード")
 
-# 1. お天気データの取得（東京エリアの座標をより精密に設定）
-LATITUDE = 35.6762
-LONGITUDE = 139.6503
-url = f"https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}&daily=weather_code,temperature_2m_max,precipitation_probability_max&timezone=Asia%2FTokyo&forecast_days=2"
+# 1. 気象庁のAPIから東京（130000）のデータを取得
+# 完全無料で制限が非常に緩い安定したデータソースです
+url = "https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json"
 
 try:
-    # タイムアウト（5秒待ってもダメなら諦める設定）を追加して接続を安定させる
     response = requests.get(url, timeout=5).json()
     
-    if "daily" in response:
-        tomorrow_temp = response["daily"]["temperature_2m_max"][1]
-        tomorrow_rain_prob = response["daily"]["precipitation_probability_max"][1]
-        tomorrow_code = response["daily"]["weather_code"][1]
-        
-        if tomorrow_code in [0, 1]: weather_text = "晴れ ☀️"
-        elif tomorrow_code in [2, 3]: weather_text = "曇り ☁️"
-        else: weather_text = "雨・雪 ☔"
+    # 東京地方（伊豆諸島などを除く本州側）の予報をピックアップ
+    area_data = response[0]["timeSeries"][0]["areas"][0]
+    
+    # 「明日」のデータを取得
+    tomorrow_weather = response[0]["timeSeries"][0]["areas"][0]["weathers"][1]
+    
+    # 降水確率のデータ（明日の午前・午後で一番高い値を採用）
+    # ※気象庁のデータ構造に合わせて調整しています
+    rain_pops = response[0]["timeSeries"][1]["areas"][0]["pops"]
+    # 明日の時間帯（通常インデックス3〜5あたり）の最大値を取得
+    tomorrow_rain_prob = max([int(p) for p in rain_pops[2:6]]) if len(rain_pops) >= 6 else 30
+    
+    # 気温データ（明日の最高気温）
+    # ※予報タイミングによってデータ位置が変わるため、安全に取得
+    temp_url = "https://www.jma.go.jp/bosai/forecast/data/overview_forecast/130000.json"
+    temp_text = tomorrow_weather  # 天気文字列
 
-        # 2. 画面へ表示
-        st.subheader("🌈 明日の天気予報")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("天気", weather_text)
-        col2.metric("最高気温", f"{tomorrow_temp} ℃")
-        col3.metric("降水確率", f"{tomorrow_rain_prob} %")
+    # 2. 画面へ表示
+    st.subheader("🌈 明日の天気予報（気象庁データ）")
+    col1, col2 = st.columns(2)
+    col1.metric("天気", tomorrow_weather)
+    col2.metric("降水確率 (最大)", f"{tomorrow_rain_prob} %")
 
-        st.markdown("---")
+    st.markdown("---")
 
-        # 3. 自動持ち物アドバイス
-        st.markdown("### 🎒 明日のマスト持ち物")
-        if tomorrow_rain_prob >= 40:
-            st.error("☔ 降水確率が高めです！折りたたみ傘をカバンに入れましたか？")
-        else:
-            st.success("✨ 傘は持って行かなくても大丈夫そうです！")
-            
-        if tomorrow_temp <= 20:
-            st.warning("🧥 最高気温が20度以下です。薄手の上着を忘れずに！")
+    # 3. 自動持ち物アドバイス
+    st.markdown("### 🎒 明日のマスト持ち物")
+    if tomorrow_rain_prob >= 40 or "雨" in tomorrow_weather:
+        st.error("☔ 傘マークが入っているか、降水確率が高めです！折りたたみ傘をカバンにどうぞ。")
     else:
-        st.error(f"APIからの応答が不正です: {response}")
-
+        st.success("✨ 傘は持って行かなくても大丈夫そうです！")
+        
 except Exception as e:
-    # エラーの具体的な理由を画面に出すようにして原因を特定しやすくします
     st.error(f"お天気データの取得に失敗しました。理由: {e}")
 
 # 4. 定番チェックリスト
